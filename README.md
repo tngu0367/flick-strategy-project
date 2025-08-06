@@ -106,7 +106,7 @@ Flick's hygiene division faced critical strategic gaps:
 ## 🔗 **Documentation**
 
 - [**Final Strategic Report**](link-to-report) - Comprehensive analysis and recommendations  
-- [**Executive Presentation**](link-to-slides) - Key findings and strategic roadmap  
+- [**Executive Presentation**](BEX 3350 Presentation.pptx) - Key findings and strategic roadmap  
 - [**Data Analytics Portfolio**](link-to-code) - R scripts and Excel models used in analysis  
 
 ---
