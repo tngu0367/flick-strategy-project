@@ -1,0 +1,356 @@
+---
+title: "data"
+author: "Nhi Nguyen"
+date: "2025-08-09"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+library(tidyverse)
+library(readxl)
+library(lubridate)
+library(scales)
+library(janitor)
+library(viridis)
+
+```
+
+
+## --- Load data ---
+
+```{r}
+excel_path <- "./Downloads/Monash Export (V1).xlsx"  
+sheets <- excel_sheets(excel_path)
+data_list <- map(sheets, ~ read_excel(excel_path, sheet = .x) %>% clean_names())
+names(data_list) <- sheets
+df <- data_list[["Master File"]]
+```
+
+
+## --- Clean ---
+
+
+```{r}
+df <- df %>%
+  rename_with(~ tolower(gsub("\\s+", "_", .x))) %>%
+  mutate(
+    add_date = suppressWarnings(as_date(add_date)),
+    adjusted_av = parse_number(as.character(adjusted_av)),
+    quantity = as.numeric(quantity),
+    industry = coalesce(as.character(industry), "Unclassified"),
+    service_type = coalesce(as.character(service_type), "Unknown"),
+    suburb = coalesce(as.character(suburb), "Unknown"),
+    customer_id = as.character(customer_id),
+    location_id = as.character(location_id),
+    year = year(add_date),
+    month = floor_date(add_date, unit = "month"),
+    total_revenue = ifelse(!is.na(quantity) & !is.na(adjusted_av),
+                           quantity * adjusted_av, NA_real_)
+  )
+
+# Sites per customer
+sites_per_customer <- df %>%
+  distinct(location_id, customer_id) %>%
+  group_by(customer_id) %>%
+  summarise(sites = n(), .groups = "drop")
+```
+
+
+## --- 1) Service count by year ---
+
+```{r}
+df %>%
+  filter(!is.na(year)) %>%
+  count(year) %>%
+  ggplot(aes(factor(year), n, fill = factor(year))) +
+  geom_col(show.legend = FALSE) +
+  geom_text(aes(label = n), vjust = -0.5) +
+  scale_fill_viridis_d(option = "C") +
+  labs(title = "Service Count by Year", x = "Year", y = "Service Count") +
+  theme_minimal(base_size = 13)
+```
+
+
+## --- 1b) Monthly trend ---
+
+```{r}
+df %>%
+  filter(!is.na(month)) %>%
+  count(month) %>%
+  ggplot(aes(month, n)) +
+  geom_line(color = viridis(1, option = "B"), size = 1.1) +
+  geom_point(color = viridis(1, option = "B"), size = 2) +
+  geom_smooth(se = FALSE, method = "loess", color = "darkorange") +
+  scale_x_date(date_labels = "%Y-%m", date_breaks = "6 months") +
+  scale_y_continuous(limits = c(0, 1000), labels = comma) +
+  labs(title = "Monthly Service Count (Smoothed)", x = "Month", y = "Service Count") +
+  theme_minimal(base_size = 13) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+```
+
+
+## --- 2) Revenue by industry ---
+
+```{r}
+df %>%
+  group_by(industry) %>%
+  summarise(total_revenue = sum(total_revenue, na.rm = TRUE), .groups = "drop") %>%
+  slice_max(total_revenue, n = 15) %>%
+  mutate(industry = fct_reorder(industry, total_revenue)) %>%
+  ggplot(aes(industry, total_revenue, fill = total_revenue)) +
+  geom_col(show.legend = FALSE) +
+  scale_fill_viridis_c(option = "C") +
+  coord_flip() +
+  scale_y_continuous(labels = dollar) +
+  labs(title = "Top 15 Industries by Total Revenue", x = NULL, y = "Revenue (AUD)") +
+  theme_minimal(base_size = 13)
+```
+
+## --- 3) Customer Count by Industry (Top 15)
+
+
+```{r}
+df %>%
+  group_by(industry) %>%
+  summarise(customers = n_distinct(customer_id), .groups = "drop") %>%
+  slice_max(customers, n = 15) %>%
+  mutate(industry = fct_reorder(industry, customers)) %>%
+  ggplot(aes(industry, customers, fill = customers)) +
+  geom_col(show.legend = FALSE) +
+  coord_flip() +
+  scale_fill_viridis_c() +
+  labs(title = "Top 15 Industries by Unique Customers", x = NULL, y = "Customers") +
+  theme_minimal(base_size = 13)
+```
+
+
+## --- 4) Client size distribution ---
+
+```{r}
+sites_per_customer %>%
+  mutate(client_size = case_when(
+    sites == 1 ~ "1 (Single-site)",
+    sites >= 2 & sites <= 4 ~ "2-4 (Small)",
+    sites >= 5 & sites <= 10 ~ "5-10 (Medium)",
+    sites > 10 ~ "10+ (Large)",
+    TRUE ~ "Unknown"
+  )) %>%
+  count(client_size) %>%
+  mutate(client_size = fct_relevel(client_size, "1 (Single-site)","2-4 (Small)","5-10 (Medium)","10+ (Large)","Unknown")) %>%
+  ggplot(aes(client_size, n, fill = client_size)) +
+  geom_col(show.legend = FALSE) +
+  scale_fill_viridis_d(option = "E") +
+  labs(title = "Client Size Distribution", x = "Client Size", y = "Number of Customers") +
+  theme_minimal(base_size = 13)
+```
+
+
+## --- 5) Service count vs revenue per industry ---
+
+```{r}
+df %>%
+  group_by(industry) %>%
+  summarise(service_count = n(),
+            total_revenue = sum(total_revenue, na.rm = TRUE),
+            avg_rev = total_revenue / pmax(service_count, 1), .groups = "drop") %>%
+  ggplot(aes(service_count, total_revenue, size = avg_rev, color = avg_rev)) +
+  geom_point(alpha = 0.8) +
+  scale_x_log10(labels = comma) +
+  scale_y_log10(labels = dollar) +
+  scale_color_viridis_c() +
+  labs(title = "Service Count vs Total Revenue by Industry",
+       x = "Service Count (log)", y = "Total Revenue (log)",
+       size = "Avg Revenue", color = "Avg Revenue") +
+  theme_minimal(base_size = 13)
+```
+
+## --- 6) Average Service Value (Adjusted AV) by Year ---
+
+```{r}
+df %>%
+  filter(!is.na(year), !is.na(adjusted_av)) %>%
+  group_by(year) %>%
+  summarise(mean_av = mean(adjusted_av, na.rm = TRUE),
+            median_av = median(adjusted_av, na.rm = TRUE), .groups = "drop") %>%
+  ggplot(aes(year, mean_av)) +
+  geom_line(color = "darkblue", size = 1.1) +
+  geom_point(color = "darkblue", size = 2) +
+  geom_line(aes(y = median_av), linetype = "dashed", color = "orange", size = 1) +
+  scale_y_continuous(labels = dollar) +
+  labs(title = "Average Service Value (Adjusted AV) by Year",
+       x = "Year", y = "Adjusted AV (AUD)", caption = "Solid = mean, dashed = median") +
+  theme_minimal(base_size = 13)
+```
+
+
+## ---7) Average Adjusted AV per Year per Industry (Top 10) ---
+
+```{r}
+top10 <- df %>%
+  filter(!is.na(adjusted_av)) %>%
+  group_by(industry) %>%
+  summarise(overall_avg = mean(adjusted_av, na.rm = TRUE), .groups = "drop") %>%
+  arrange(desc(overall_avg)) %>%
+  slice_head(n = 10) %>%
+  pull(industry)
+
+df %>%
+  filter(!is.na(year), !is.na(adjusted_av), industry %in% top10) %>%
+  group_by(industry, year) %>%
+  summarise(avg_av = mean(adjusted_av, na.rm = TRUE), .groups = "drop") %>%
+  ggplot(aes(year, avg_av, color = industry)) +
+  geom_line(size = 1) +
+  geom_point(size = 1.5) +
+  scale_color_viridis_d(option = "C") +
+  scale_y_continuous(labels = dollar) +
+  labs(title = "Average Adjusted AV per Year by Industry (Top 10)",
+       x = "Year", y = "Average Adjusted AV (AUD)", color = "Industry") +
+  theme_minimal(base_size = 13)
+```
+
+
+## --- 8) Revenue by Suburb (Top 10) ---
+
+```{r}
+df %>%
+  group_by(suburb) %>%
+  summarise(total_revenue = sum(total_revenue, na.rm = TRUE), .groups = "drop") %>%
+  slice_max(total_revenue, n = 10) %>%
+  mutate(suburb = fct_reorder(suburb, total_revenue)) %>%
+  ggplot(aes(suburb, total_revenue, fill = total_revenue)) +
+  geom_col(show.legend = FALSE) +
+  coord_flip() +
+  scale_fill_viridis_c() +
+  scale_y_continuous(labels = dollar) +
+  labs(title = "Top 10 Suburbs by Total Revenue", x = NULL, y = "Total Revenue (AUD)") +
+  theme_minimal(base_size = 13)
+```
+
+
+## --- 9) Top 20 Suburbs by Unique Customers
+
+
+```{r}
+df %>%
+  group_by(suburb) %>%
+  summarise(unique_customers = n_distinct(customer_id), .groups = "drop") %>%
+  slice_max(unique_customers, n = 20) %>%
+  mutate(suburb = fct_reorder(suburb, unique_customers)) %>%
+  ggplot(aes(suburb, unique_customers, fill = unique_customers)) +
+  geom_col(show.legend = FALSE) +
+  coord_flip() +
+  scale_fill_viridis_c() +
+  labs(title = "Top 20 Suburbs by Unique Customers", x = NULL, y = "Unique Customers") +
+  theme_minimal(base_size = 13)
+```
+
+
+## --- 10) Service Type Distribution (Top 15 by Count) ---
+
+```{r}
+df %>%
+  group_by(service_type) %>%
+  summarise(count = n(), .groups = "drop") %>%
+  slice_max(count, n = 15) %>%
+  mutate(service_type = fct_reorder(service_type, count)) %>%
+  ggplot(aes(service_type, count, fill = count)) +
+  geom_col(show.legend = FALSE) +
+  coord_flip() +
+  scale_fill_viridis_c() +
+  labs(title = "Top 15 Service Types by Count", x = NULL, y = "Count") +
+  theme_minimal(base_size = 13)
+
+```
+
+
+
+## --- 11) Service Type Distribution (Top 15 by Revenue) ---
+
+```{r}
+df %>%
+  group_by(service_type) %>%
+  summarise(total_revenue = sum(total_revenue, na.rm = TRUE), .groups = "drop") %>%
+  slice_max(total_revenue, n = 15) %>%
+  mutate(service_type = fct_reorder(service_type, total_revenue)) %>%
+  ggplot(aes(service_type, total_revenue, fill = total_revenue)) +
+  geom_col(show.legend = FALSE) +
+  coord_flip() +
+  scale_fill_viridis_c(option = "C") +
+  scale_y_continuous(labels = dollar) +
+  labs(title = "Top 15 Service Types by Revenue", x = NULL, y = "Total Revenue (AUD)") +
+  theme_minimal(base_size = 13)
+
+```
+
+
+
+## --- 12) Revenue vs Volume per Service Type (Bubble Chart) ---
+
+```{r}
+df %>%
+  group_by(service_type) %>%
+  summarise(service_count = n(),
+            total_revenue = sum(total_revenue, na.rm = TRUE), .groups = "drop") %>%
+  filter(service_count > 0) %>%
+  ggplot(aes(x = service_count, y = total_revenue,
+             size = service_count, color = total_revenue)) +
+  geom_point(alpha = 0.7) +
+  scale_x_log10(labels = comma) +
+  scale_y_log10(labels = dollar) +
+  scale_color_viridis_c() +
+  labs(title = "Service Count vs Revenue per Service Type",
+       x = "Service Count (log)", y = "Total Revenue (log)",
+       size = "Service Count", color = "Total Revenue") +
+  theme_minimal(base_size = 13)
+```
+
+
+## --- 13) Service Type Distribution (Top 15 by Revenue) ---
+
+
+```{r}
+sectors <- if ("School" %in% unique(df$industry)) {
+  "School"
+} else {
+  df %>% count(industry, sort = TRUE) %>% slice_head(n = 3) %>% pull(industry)
+}
+
+df %>%
+  filter(industry %in% sectors) %>%
+  group_by(industry, service_type) %>%
+  summarise(service_count = n(),
+            total_revenue = sum(total_revenue, na.rm = TRUE), .groups = "drop") %>%
+  mutate(service_type = fct_reorder(service_type, service_count)) %>%
+  ggplot(aes(service_type, service_count, fill = total_revenue)) +
+  geom_col() +
+  facet_wrap(~industry, scales = "free_y") +
+  coord_flip() +
+  scale_fill_viridis_c() +
+  labs(title = paste("Service Volume vs Revenue —", paste(sectors, collapse = ", ")),
+       x = NULL, y = "Service Count", fill = "Revenue") +
+  theme_minimal(base_size = 12)
+
+```
+
+
+## --- 14) Customer Tenure Distribution ---
+
+
+```{r}
+snapshot <- Sys.Date()
+df %>%
+  filter(!is.na(customer_id) & !is.na(add_date)) %>%
+  distinct(customer_id, add_date) %>%
+  mutate(tenure_years = as.numeric(difftime(snapshot, add_date, units = "days")) / 365.25) %>%
+  ggplot(aes(tenure_years)) +
+  geom_histogram(bins = 30, fill = viridis(1), color = "white") +
+  labs(title = "Customer Tenure Distribution",
+       x = "Years with Flick", y = "Number of Customers") +
+  theme_minimal(base_size = 13)
+```
+
+
