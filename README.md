@@ -80,16 +80,16 @@ Flick's hygiene division faced critical strategic gaps:
 ## 📋 **Project Management & Collaboration**
 
 - **Stakeholder Management**: Conducted weekly progress meetings with Flick senior management  
-- **Team Leadership**: Coordinated 4-person multidisciplinary team across finance, marketing, and operations workstreams  
+- **Team Leadership**: Coordinated a 4-person multidisciplinary team across finance, marketing, and operations workstreams  
 - **Quality Assurance**: Implemented data validation protocols and conservative forecasting assumptions  
-- **Deliverable Excellence**: Produced comprehensive 20-page strategic report with executive summary, detailed analysis, and implementation roadmap  
+- **Deliverable Excellence**: Produced a comprehensive 20-page strategic report with an executive summary, detailed analysis, and implementation roadmap  
 
 ---
 
 ## 🏆 **Professional Recognition**
 
 - **Client Endorsement**: Received positive feedback from Flick management for actionable insights and professional delivery  
-- **Academic Excellence**: Submitted as part of strategic consulting capstone program  
+- **Academic Excellence**: Submitted as part of strategic consulting capstone program (HD grade for project findings)
 - **Industry Application**: Recommendations aligned with real-world business constraints and growth objectives  
 
 ---
